@@ -55,7 +55,7 @@ def package_result(status: str, msg: str, data: dict):
     return {"status": status, "msg": msg, "results": data}
 
 
-def predict_v2(module_info: dict, input: dict):
+def predict_v2(module_info: dict, input: dict, skip_format_str: bool = False):
     '''
 
     Predict with `serving` API of module.
@@ -87,7 +87,10 @@ def predict_v2(module_info: dict, input: dict):
         output = serving_method(**predict_args)
     except Exception as err:
         log.logger.error(traceback.format_exc())
-        return package_result("101", str(err), "")
+        return package_result("101", str(err), {})
+
+    if skip_format_str and isinstance(output, str):
+        return output
 
     return package_result("000", "", output)
 
@@ -133,6 +136,32 @@ def create_app(init_flag: bool = False, configs: dict = None):
         Add id info to `request.data` before request.
         '''
         request.data = {"id": utils.md5(request.remote_addr + str(time.time()))}
+
+    @app_instance.route("/kb/predict/<module_name>", methods=["POST"])
+    def predict_serving_v2_kb(module_name: str):
+        '''
+        Http api for predicting.
+
+        Args:
+            module_name(str): Module name for predicting.
+
+        Returns:
+            Result of predicting after packaging.
+        '''
+        if module_name in v2_module_info.modules:
+            module_info = v2_module_info.get_module_info(module_name)
+        else:
+            msg = "Module {} is not available.".format(module_name)
+            return package_result("111", msg, {})
+        inputs = request.json or request.form
+        if inputs is None:
+            msg = "This usage is out of date, please use 'application/json' as content-type to post to /predict/%s. See 'https://github.com/PaddlePaddle/PaddleHub/blob/release/v1.6/docs/tutorial/serving.md' for more details." % (
+                module_name)
+            return package_result("112", msg, {})
+
+        results = predict_v2(module_info, inputs, True)
+
+        return results
 
     @app_instance.route("/predict/<module_name>", methods=["POST"])
     def predict_serving_v2(module_name: str):

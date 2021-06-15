@@ -129,6 +129,37 @@ def create_app(client_port: int = 5559, modules_name: list = []):
         '''
         request.data = {"id": utils.md5(request.remote_addr + str(time.time()))}
 
+    @app_instance.route("/kb/predict/<module_name>", methods=["POST"])
+    def predict_serving_v3_kb(module_name: str):
+        '''
+        Http api for predicting.
+
+        Args:
+            module_name(str): Module name for predicting.
+
+        Returns:
+            Result of predicting after packaging.
+        '''
+
+        if module_name not in modules_name:
+            msg = "Module {} is not available.".format(module_name)
+            return package_result("111", msg, {})
+        inputs = request.json or request.form
+        if inputs is None:
+            msg = "This usage is out of date, please use 'application/json' as content-type to post to /predict/%s. See 'https://github.com/PaddlePaddle/PaddleHub/blob/release/v1.6/docs/tutorial/serving.md' for more details." % (
+                module_name)
+            return package_result("112", msg, {})
+        inputs = {'module_name': module_name, 'inputs': inputs}
+        port_str = 'tcp://localhost:%s' % client_port
+
+        client = InferenceClientProxy.get_client(pid, port_str)
+
+        results = client.send_req(inputs)
+        if isinstance(results, str):
+            return results
+
+        return package_result("000", "", results)
+
     @app_instance.route("/predict/<module_name>", methods=["POST"])
     def predict_serving_v3(module_name: str):
         '''
@@ -143,12 +174,12 @@ def create_app(client_port: int = 5559, modules_name: list = []):
 
         if module_name not in modules_name:
             msg = "Module {} is not available.".format(module_name)
-            return package_result("111", "", msg)
+            return package_result("111", msg, {})
         inputs = request.json
         if inputs is None:
-            results = "This usage is out of date, please use 'application/json' as content-type to post to /predict/%s. See 'https://github.com/PaddlePaddle/PaddleHub/blob/release/v1.6/docs/tutorial/serving.md' for more details." % (
+            msg = "This usage is out of date, please use 'application/json' as content-type to post to /predict/%s. See 'https://github.com/PaddlePaddle/PaddleHub/blob/release/v1.6/docs/tutorial/serving.md' for more details." % (
                 module_name)
-            return package_result("112", results, "")
+            return package_result("112", msg, {})
         inputs = {'module_name': module_name, 'inputs': inputs}
         port_str = 'tcp://localhost:%s' % client_port
 
@@ -156,7 +187,7 @@ def create_app(client_port: int = 5559, modules_name: list = []):
 
         results = client.send_req(inputs)
 
-        return package_result("000", results, "")
+        return package_result("000", "", results)
 
     return app_instance
 
